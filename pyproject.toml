@@ -1,0 +1,30 @@
+[project]
+name = "document-intelligence-refinery"
+version = "0.1.0"
+description = "A multi-stage agentic pipeline for document intelligence and structured extraction."
+requires-python = ">=3.10"
+readme = "README.md"
+authors = [
+  { name = "FDE", email = "fde@example.com" }
+]
+dependencies = [
+  "pydantic>=2.7,<3",
+  "pdfplumber>=0.11",
+  "pypdf>=4.0",
+  "pyyaml>=6.0",
+  "httpx>=0.27",
+  "scikit-learn>=1.4",
+  "reportlab>=4.0",
+  "docling>=1.20.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "src",
+]
+
