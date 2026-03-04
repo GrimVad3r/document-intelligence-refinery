@@ -16,6 +16,7 @@ dependencies = [
   "scikit-learn>=1.4",
   "reportlab>=4.0",
   "docling>=1.20.0",
+  "requests>=2.32.5",
 ]
 
 [project.optional-dependencies]

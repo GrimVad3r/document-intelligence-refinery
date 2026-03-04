@@ -1,0 +1,17 @@
+{
+  "document_id": "company_profile",
+  "root_sections": [
+    {
+      "id": "company_profile-root",
+      "title": "Document",
+      "page_start": 1,
+      "page_end": 24,
+      "key_entities": [],
+      "summary": "2024/25 Rising with Africa Company Profile N o t i c e i s h e r e b y g i v e n t o t h e S h a r e h o l d e r s t o a t t e n d t h e 7 t h A n n u a l O r d i n a r y G e n e r a l M e e t i n g o f E t h i o p i a n R e i n s u r a n c e S. C. t h a t w i l l b e h e l d i n a c c o r d a n c e w i t h A r t i c l e s 3 6 6 , 3 6 7 , 3 7 0 , 3 7 1 a n d 3 7 2 o f t h e C o m m e r c i a l C o d e o f E t h i o p i a , P r o c l a m a t i o n N u m b e r 1 2 4 3 / 2 0 2 1 a n d A r t i c l e s 9 a n d 1 0 o f t h e C o m p a n y ’ s A r t i c l e s o f A s s o c i a t i o n a s w e l l a s t h e r e l e v a n t D i r e c t i v e s o f t h e N a t i o n a l B a n k o f E t h i o p i a. ",
+      "data_types_present": [
+        "tables"
+      ],
+      "children": []
+    }
+  ]
+}
