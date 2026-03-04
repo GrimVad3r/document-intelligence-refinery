@@ -15,6 +15,7 @@ from typing import List, Sequence, Tuple
 from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore[import-untyped]
 from sklearn.metrics.pairwise import cosine_similarity  # type: ignore[import-untyped]
 
+from .audit_agent import AuditAgent, AuditResult
 from ..models.ldu import LDU
 from ..models.pageindex import PageIndex, PageIndexSection
 from ..models.provenance import ProvenanceChain
@@ -43,6 +44,9 @@ class QueryResult:
 
 class QueryAgent:
     """High-level query interface over PageIndex, LDUs, and fact tables."""
+
+    def __init__(self) -> None:
+        self.audit_agent = AuditAgent()
 
     def pageindex_navigate(self, topic: str, index: PageIndex, top_k: int = 3) -> List[PageIndexSection]:
         """Return the most relevant sections for a topic using TF-IDF similarity."""
@@ -85,4 +89,24 @@ class QueryAgent:
             logger.exception("structured_query failed", db_path=db_path, sql=sql)
             raise QueryError("structured_query execution failed") from exc
         return rows
+
+    def answer_with_provenance(self, question: str, ldus: Sequence[LDU], top_k: int = 3) -> QueryResult:
+        """Return a short answer draft with provenance from best-matching LDUs."""
+
+        hits = self.semantic_search(query=question, ldus=ldus, top_k=top_k)
+        if not hits:
+            return QueryResult(answer="No evidence found.", provenance=ProvenanceChain(records=[]))
+
+        snippets = [hit.content for hit in hits]
+        answer = "\n".join(snippets)
+
+        records = []
+        for hit in hits:
+            records.extend(hit.provenance.records)
+        return QueryResult(answer=answer, provenance=ProvenanceChain(records=records))
+
+    def verify_claim(self, claim: str, ldus: Sequence[LDU], min_score: float = 0.12) -> AuditResult:
+        """Audit claim against extracted LDUs and return verified/unverifiable verdict."""
+
+        return self.audit_agent.verify_claim(claim=claim, ldus=ldus, min_score=min_score)
 

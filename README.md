@@ -16,6 +16,7 @@ brief:
 - `src/models`: Pydantic v2 models representing document state
 - `src/agents`: Agents for triage, extraction routing, chunking, indexing, querying
 - `src/strategies`: Extraction strategies (fast text, layout-aware, vision-augmented)
+- `src/data`: Data-layer ingestion (vector manifest + SQLite fact table)
 - `.refinery/`: Runtime artifacts (`profiles`, `extraction_ledger.jsonl`, etc.)
 - `rubric/extraction_rules.yaml`: Externalized thresholds and chunking rules
 - `tests/`: Pytest-based tests
@@ -23,7 +24,7 @@ brief:
 ### Installation
 
 ```bash
-cd Document-Inetelligence-refinery
+cd document-intelligence-refinery
 python -m venv .venv
 .venv\Scripts\activate  # Windows
 pip install -e .
@@ -61,6 +62,17 @@ This will:
    (`src/agents/chunker.py`) to produce a list of LDUs.
 6. Build a **PageIndex** using `PageIndexBuilder`
    (`src/agents/indexer.py`) for navigation.
+7. Persist the PageIndex under `.refinery/pageindex/{doc_id}.json`.
+8. Persist a vector-ingestion manifest under `.refinery/vectorstore/{doc_id}.jsonl`.
+
+Optional:
+
+```bash
+python -m src.main path\to\document.pdf --doc-id my_doc_id --sqlite-path .refinery\facts.db
+```
+
+When `--sqlite-path` is provided, extracted tables are ingested into SQLite via
+`src/data/fact_table.py`.
 
 All stages emit structured logs via the centralized logger in
 `src/utils/logging.py`.
@@ -76,10 +88,16 @@ from src.agents.query_agent import QueryAgent
 agent = QueryAgent()
 top_sections = agent.pageindex_navigate(topic="capital expenditure", index=page_index)
 top_ldus = agent.semantic_search(query="capital expenditure for Q3", ldus=ldus)
+result = agent.answer_with_provenance(question="What is the Q3 capex guidance?", ldus=ldus)
+audit = agent.verify_claim(claim="Q3 capex is 4.2B", ldus=ldus)
 ```
 
 For numerical fact querying, point `structured_query` at a SQLite database
 that you populate from extracted tables.
+
+For orchestration-compatible query flow, use `src/agents/langgraph_query_agent.py`
+which provides a LangGraph-ready wrapper with a deterministic fallback when
+`langgraph` is not installed.
 
 ### Logging and Error Handling
 

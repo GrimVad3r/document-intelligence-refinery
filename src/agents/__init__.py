@@ -1,2 +1,2 @@
-"""Agent implementations for triage, extraction, chunking, indexing, and querying."""
+"""Agent implementations for triage, extraction, chunking, indexing, querying, and audit."""
 
