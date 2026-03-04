@@ -1,0 +1,20 @@
+{
+  "doc_id": "example_financial_report",
+  "source_path": "data/CBE_ANNUAL_REPORT_2023-24.pdf",
+  "origin_type": "native_digital",
+  "layout_complexity": "multi_column",
+  "language": {
+    "code": "en",
+    "confidence": 0.95
+  },
+  "domain_hint": "financial",
+  "estimated_extraction_cost": "fast_text_sufficient",
+  "heuristic_signals": {
+    "avg_chars_per_page": 2200.0,
+    "avg_char_density": 0.0021,
+    "avg_image_area_ratio": 0.18,
+    "table_like_region_ratio": 0.35,
+    "multi_column_confidence": 0.7
+  }
+}
+

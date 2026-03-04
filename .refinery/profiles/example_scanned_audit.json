@@ -1,0 +1,20 @@
+{
+  "doc_id": "example_scanned_audit",
+  "source_path": "data/Audit_Report_2023.pdf",
+  "origin_type": "scanned_image",
+  "layout_complexity": "table_heavy",
+  "language": {
+    "code": "en",
+    "confidence": 0.9
+  },
+  "domain_hint": "financial",
+  "estimated_extraction_cost": "needs_vision_model",
+  "heuristic_signals": {
+    "avg_chars_per_page": 10.0,
+    "avg_char_density": 0.0001,
+    "avg_image_area_ratio": 0.85,
+    "table_like_region_ratio": 0.6,
+    "multi_column_confidence": 0.2
+  }
+}
+
