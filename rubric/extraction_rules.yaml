@@ -1,0 +1,16 @@
+triage:
+  fast_text_min_avg_chars_per_page: 150
+  fast_text_min_char_density: 0.0015
+  fast_text_max_image_area_ratio: 0.4
+  multi_column_threshold: 0.6
+  table_heavy_threshold: 0.4
+
+escalation:
+  confidence_threshold: 0.7
+
+chunking:
+  max_tokens_per_ldu: 512
+  table_preserve_header: true
+  keep_numbered_lists_together: true
+  attach_captions_to_figures: true
+
