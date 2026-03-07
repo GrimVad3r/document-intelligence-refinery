@@ -8,7 +8,7 @@ RAG and downstream querying.
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -55,5 +55,13 @@ class LDU(BaseModel):
     provenance: ProvenanceChain = Field(
         default_factory=ProvenanceChain,
         description="Provenance chain describing where this content came from.",
+    )
+    related_ldu_ids: List[str] = Field(
+        default_factory=list,
+        description="Resolved cross-reference links to other LDUs (tables, figures, etc.).",
+    )
+    metadata: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Additional structural metadata (section title, caption, table labels, etc.).",
     )
 
