@@ -1,11 +1,11 @@
 {
   "schema_version": "1.0",
-  "generated_at_utc": "2026-03-07T10:00:17.027409+00:00",
+  "generated_at_utc": "2026-03-07T10:42:46.112153+00:00",
   "page_index": {
-    "document_id": "company_profile",
+    "document_id": "company_profile_demo",
     "root_sections": [
       {
-        "id": "company_profile-root",
+        "id": "company_profile_demo-root",
         "title": "Document",
         "page_start": 1,
         "page_end": 24,

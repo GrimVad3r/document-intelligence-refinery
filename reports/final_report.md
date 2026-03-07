@@ -11,10 +11,10 @@ This project implements a five-stage, typed document refinery pipeline with adap
 Current artifact state:
 
 - Profiles: 6 (`.refinery/profiles/*.json`)
-- Extraction ledger rows: 14 (`.refinery/extraction_ledger.jsonl`)
+- Extraction ledger rows: 16 (`.refinery/extraction_ledger.jsonl`)
 - PageIndex artifacts: 1 (`.refinery/pageindex/company_profile.json`)
 - Vector manifests: 1 (`.refinery/vectorstore/company_profile.jsonl`)
-- SQLite fact rows: 50 (`.refinery/facts.db`, `company_profile`)
+- SQLite fact rows: 100 (`.refinery/facts.db`, `company_profile`, append-only ingest)
 
 ## 1. Domain Notes and Strategy Logic
 
@@ -85,36 +85,53 @@ flowchart LR
 | Context fragmentation in retrieval | `company_profile` (pre-fix) | Word-level extraction produced `4989` LDUs and low-quality hits | Upgraded fast extraction to paragraph-level grouping; chunk count reduced to `87` |
 | Provenance gaps reduce auditability | Any long report query | Answers require verifiable source location | Every LDU includes `content_hash` + `ProvenanceChain`; query output returns source metadata |
 
-## 4. Side-by-Side Quality Analysis
+## 4. Per-Class Extraction Quality Analysis
 
 ### 4.1 Strategy-Level Comparison (Ledger-Backed)
 
 | Metric | Fast Text | Vision |
 |---|---:|---:|
-| Runs | 13 | 1 |
-| Avg confidence | 0.802 | 0.900 |
+| Runs | 15 | 1 |
+| Avg confidence | 0.801 | 0.900 |
 | Avg cost (USD) | 0.000 | 0.420 |
-| Avg time (sec) | 5.774 | 4.870 |
+| Avg time (sec) | 5.790 | 4.870 |
 
-Source: `.refinery/extraction_ledger.jsonl` (14 rows).
+Source: `.refinery/extraction_ledger.jsonl` (16 rows, March 7, 2026 snapshot).
 
-### 4.2 Chunking Quality Comparison (`company_profile`)
+### 4.2 Class Coverage Matrix
 
-| Dimension | Before Semantic Grouping | After Semantic Grouping |
+| Class | Representative Docs | Dominant Route | Evidence Availability |
+|---|---|---|---|
+| Class A: native digital, clean narrative | `simple_doc`, `example_financial_report` | `fast_text` | Full (unit-test and ledger evidence) |
+| Class B: mixed origin, image-heavy but text-present | `company_profile` | `fast_text` | Full (pipeline outputs + vector manifest + query output) |
+| Class C: native digital, table-heavy/mixed layout | `example_tax_report`, `example_technical_report` | `needs_layout_model` | Partial (profile + chunking-rule evidence; source PDFs not present in workspace) |
+| Class D: scanned image/table-heavy | `example_scanned_audit` | `vision` | Partial (profile + ledger row; source PDF/API run not reproducible in this environment) |
+
+### 4.3 Visual Side-by-Side Examples (Per Class)
+
+| Class | Source-Side View | Extracted/Chunked View | Quality Readout |
+|---|---|---|---|
+| A | `Revenue increased sharply this year. Outlook remains positive.` | Block 1: `Revenue increased sharply this year.`  Block 2: `Outlook remains positive.` | Correct paragraph grouping and preserved sentence boundaries |
+| B | Query intent: `Summarize key financial points.` | Retrieved chunk (page 8): `Strategic Partnerships Ethio-Re works hand-in-hand...` | Retrieval upgraded from token fragments to paragraph-scale evidence; still shows some OCR artifacts on specific pages |
+| C | Table intent: `Metric, Value -> Revenue, 4.2B` | Table LDU: `Metric | Value` / `Revenue | 4.2B` | Header-cell binding preserved; table structure retained in chunk |
+| D | Profile signals: `avg_chars_per_page=10.0`, `image_area_ratio=0.85` | Ledger route: `strategy=vision`, `confidence=0.9`, `cost=0.42` | Correct high-cost routing decision; extracted text sample pending source PDF/API access |
+
+### 4.4 Retrieval Quality Shift (`company_profile`)
+
+| Dimension | Before Fast-Text Grouping Fix | Current Implementation |
 |---|---:|---:|
 | LDU count | 4,989 | 87 |
-| Typical retrieval hit | Single token (`"key"`) | Coherent paragraph block |
-| Query answer quality | Token fragments | Multi-sentence evidence snippets |
+| Typical retrieval hit | Single token (`"key"`) | Multi-sentence paragraph |
+| Query answer quality | Fragmented | Coherent, provenance-backed |
 
-Observation: Paragraph-level block construction significantly improved retrieval coherence and answer usefulness.
-
-### 4.3 Table Extraction Proxy Metrics (`company_profile`)
+### 4.5 Table Extraction Proxy Metrics (`company_profile`)
 
 | Metric | Value |
 |---|---:|
-| Fact rows extracted | 50 |
-| Non-empty value rate | 100% (50/50) |
-| Header coverage | 98% (49/50) |
+| Fact rows extracted (per run) | 50 |
+| Rows currently in SQLite snapshot | 100 (two ingestions of same `doc_id`) |
+| Non-empty value rate | 100% (50/50 per run sample) |
+| Header coverage | 98% (49/50 per run sample) |
 
 ## 5. Provenance Propagation Details
 
@@ -133,27 +150,73 @@ Provenance metadata propagation is implemented explicitly across stages:
 
 Result: any answer can be traced back to `(document_id, page_number, bbox, content_hash)`.
 
-## 6. Budget Guard Behavior (Vision Path)
+## 6. Detailed Cost Analysis (Escalation + Scaling)
 
-Budget guard behavior in `VisionExtractor`:
+### 6.1 Observed Cost Baseline
 
-1. Default budget: `0.50 USD` per document.
-2. Per-page processing loop:
-   - Estimate cost from model output length:
-     - `tokens_estimate = len(text) // 4`
-     - `cost_estimate = tokens_estimate / 1000 * 0.15`
-   - Accumulate `total_cost_estimate`.
-3. Guard condition:
-   - If cumulative estimate exceeds budget, log warning and stop processing additional pages.
-4. Persisted evidence:
-   - Router logs strategy/cost in ledger for audit.
+From ledger snapshot (`16` runs):
 
-Operational implication: scanned documents are processed with quality priority but bounded cost exposure.
+- Total API cost observed: `0.42 USD`
+- Average API cost per run: `0.0262 USD`
+- Vision invocation rate: `1/16 = 6.25%`
+
+Note: this observed rate is skewed by repeated `company_profile` debug runs and should not be used alone for corpus planning.
+
+### 6.2 Escalation-Aware Cost Model
+
+Let:
+
+- `p_fast`, `p_layout`, `p_vision` = triage class proportions
+- `e_f2l` = probability fast-text escalates to layout
+- `e_l2v` = probability layout escalates to vision
+- `c_v` = average vision cost (`0.42` observed, `0.50` hard cap)
+
+Expected vision-call rate:
+
+`r_vision = p_vision + (p_layout * e_l2v) + (p_fast * e_f2l * e_l2v)`
+
+Expected API spend:
+
+`cost_per_doc = r_vision * c_v`  
+`total_cost = N_docs * cost_per_doc`
+
+Using profile-class prior (`p_fast=0.50`, `p_layout=0.333`, `p_vision=0.167`):
+
+| Scenario | `e_f2l` | `e_l2v` | `r_vision` | Cost/Doc @0.42 | Cost/Doc @0.50 cap |
+|---|---:|---:|---:|---:|---:|
+| Observed-like | 0.00 | 0.00 | 0.167 | 0.070 | 0.083 |
+| Moderate escalation | 0.10 | 0.15 | 0.224 | 0.094 | 0.112 |
+| Stress escalation | 0.20 | 0.25 | 0.275 | 0.116 | 0.138 |
+
+### 6.3 Corpus-Level Scaling
+
+| Scenario | 12 Docs @0.42 | 12 Docs @0.50 cap | 50 Docs @0.42 | 50 Docs @0.50 cap |
+|---|---:|---:|---:|---:|
+| Observed-like | 0.840 | 1.000 | 3.500 | 4.167 |
+| Moderate escalation | 1.130 | 1.345 | 4.707 | 5.604 |
+| Stress escalation | 1.386 | 1.650 | 5.775 | 6.875 |
+
+Interpretation: escalation behavior can move corpus cost by ~1.9x (observed-like to stress), so `e_f2l` and `e_l2v` should be tracked as first-class operational KPIs.
+
+### 6.4 Budget Guard Behavior (Vision Path)
+
+Budget guard implementation in `VisionExtractor`:
+
+1. Per-document cap: `0.50 USD`.
+2. Per-page estimate:
+   - `tokens_estimate = len(text) // 4`
+   - `cost_estimate = tokens_estimate / 1000 * 0.15`
+3. Stop condition:
+   - halt further page calls when cumulative estimate exceeds cap.
+4. Auditability:
+   - router persists strategy/cost to `.refinery/extraction_ledger.jsonl`.
+
+Operational implication: the system prioritizes quality for scanned docs while bounding tail-cost risk.
 
 ## 7. Tests and Verification
 
 - Test command: `python -m pytest -q`
-- Current result: **8 passed** (March 7, 2026)
+- Current result: **12 passed** (March 7, 2026)
 - Coverage includes:
   - Triage behavior
   - Data-layer ingestion + audit
@@ -199,6 +262,7 @@ Operational implication: scanned documents are processed with quality priority b
 2. Add strict table precision/recall using annotated ground truth.
 3. Upgrade PageIndex from current shallow structure to full hierarchy extraction.
 4. Add 12 cross-class Q/A examples with full provenance citations.
+5. Add reproducible Class C/D side-by-side extracts from real source PDFs (currently missing in `data/`).
 
 ## 10. Conclusion
 

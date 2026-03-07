@@ -25,7 +25,7 @@ SELECT table_id, page_number, row_index, col_index, column_header, value_text
 FROM extracted_facts
 WHERE document_id=?
 LIMIT 15
-""", ("company_profile",))
+""", ("company_profile_demo",))
 
 rows = cur.fetchall()
 print(f"Rows returned: {len(rows)}")

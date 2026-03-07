@@ -7,7 +7,7 @@ from src.agents.triage import triage_document
 
 
 doc = r"C:\Users\henokt\Downloads\Company_Profile_2024_25.pdf"
-doc_id = "company_profile"
+doc_id = "company_profile_demo"
 query = "Summarize key financial points."
 
 

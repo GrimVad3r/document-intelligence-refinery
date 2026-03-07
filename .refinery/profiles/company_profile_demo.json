@@ -1,0 +1,19 @@
+{
+  "doc_id": "company_profile_demo",
+  "source_path": "C:\\Users\\henokt\\Downloads\\Company_Profile_2024_25.pdf",
+  "origin_type": "mixed",
+  "layout_complexity": "single_column",
+  "language": {
+    "code": "en",
+    "confidence": 0.9
+  },
+  "domain_hint": "general",
+  "estimated_extraction_cost": "fast_text_sufficient",
+  "heuristic_signals": {
+    "avg_chars_per_page": 1157.4166666666667,
+    "avg_char_density": 0.0032662767937423312,
+    "avg_image_area_ratio": 0.7933087853131043,
+    "table_like_region_ratio": 0.0,
+    "multi_column_confidence": 0.1
+  }
+}
