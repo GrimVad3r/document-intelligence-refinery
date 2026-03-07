@@ -25,6 +25,8 @@ class LangGraphQueryResult:
 
     answer: str
     provenance: ProvenanceChain
+    route: str = "semantic"
+    sql_used: str | None = None
 
 
 class LangGraphQueryAgent:
@@ -47,30 +49,31 @@ class LangGraphQueryAgent:
         question: str,
         index: PageIndex,
         ldus: Sequence[LDU],
+        db_path: str | None = None,
     ) -> LangGraphQueryResult:
-        """Orchestrate page navigation + semantic retrieval for one question."""
+        """Orchestrate structured vs semantic query paths for one question."""
 
         # Fallback path used when langgraph is not available in runtime.
-        sections = self.query_agent.pageindex_navigate(topic=question, index=index, top_k=3)
-        hits = self.query_agent.semantic_search(query=question, ldus=ldus, top_k=3)
-
-        if hits:
-            best = hits[0]
-            section_hint = sections[0].title if sections else "unknown section"
-            answer = f"{best.content} (from {section_hint})"
-            provenance = best.provenance
-        else:
-            answer = "No supporting evidence found."
-            provenance = ProvenanceChain(records=[])
+        result = self.query_agent.route_query(
+            question=question,
+            index=index,
+            ldus=ldus,
+            db_path=db_path,
+            top_k=3,
+        )
 
         logger.info(
             "LangGraphQueryAgent run completed",
             extra={
                 "question": question,
                 "langgraph_runtime": self._langgraph_available,
-                "section_hits": len(sections),
-                "ldu_hits": len(hits),
+                "route": result.route,
+                "structured_rows": len(result.structured_rows or []),
             },
         )
-        return LangGraphQueryResult(answer=answer, provenance=provenance)
-
+        return LangGraphQueryResult(
+            answer=result.answer,
+            provenance=result.provenance,
+            route=result.route,
+            sql_used=result.sql_used,
+        )

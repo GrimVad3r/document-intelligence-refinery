@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import os
 from typing import List
@@ -16,6 +17,7 @@ logger = get_logger(__name__)
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 PAGEINDEX_DIR = os.path.join(PROJECT_ROOT, ".refinery", "pageindex")
+PAGEINDEX_SCHEMA_VERSION = "1.0"
 
 
 class PageIndexBuilder:
@@ -57,14 +59,53 @@ class PageIndexBuilder:
         out_dir = output_dir or PAGEINDEX_DIR
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"{index.document_id}.json")
+        payload = {
+            "schema_version": PAGEINDEX_SCHEMA_VERSION,
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "page_index": index.model_dump(mode="json"),
+        }
         with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(index.model_dump(mode="json"), f, ensure_ascii=False, indent=2)
+            json.dump(payload, f, ensure_ascii=False, indent=2)
 
         logger.info(
             "PageIndex persisted",
             extra={"document_id": index.document_id, "path": out_path},
         )
         return out_path
+
+    def load(self, path: str) -> PageIndex:
+        """Load a persisted PageIndex JSON artifact.
+
+        Supports both the current envelope format and legacy plain PageIndex JSON.
+        """
+
+        if not os.path.exists(path):
+            raise IndexingError(f"PageIndex path does not exist: {path}")
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as exc:  # noqa: BLE001
+            raise IndexingError(f"Failed to read PageIndex JSON at {path}") from exc
+
+        if not isinstance(data, dict):
+            raise IndexingError(f"Invalid PageIndex payload at {path}")
+
+        payload = data.get("page_index", data)
+        try:
+            index = PageIndex.model_validate(payload)
+        except Exception as exc:  # noqa: BLE001
+            raise IndexingError(f"Failed to parse PageIndex payload at {path}") from exc
+
+        logger.info(
+            "PageIndex loaded",
+            extra={
+                "document_id": index.document_id,
+                "path": path,
+                "schema_version": data.get("schema_version", "legacy"),
+            },
+        )
+        return index
 
     @staticmethod
     def _summarize(text: str, max_sentences: int = 3) -> str:

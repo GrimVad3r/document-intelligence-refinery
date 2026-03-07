@@ -1,41 +1,33 @@
 # TRP1 Challenge Week 3 - Final Report
 
-Date: March 4, 2026  
+Date: March 7, 2026  
 Project: Document Intelligence Refinery  
 Repository: `document-intelligence-refinery`
 
 ## 0. Executive Summary
 
-This project implements a five-stage document intelligence pipeline with typed schemas, confidence-gated extraction routing, chunking, indexing, query utilities, and provenance-aware audit support.
+This project implements a five-stage, typed document refinery pipeline with adaptive extraction, semantic chunking, PageIndex navigation, query utilities, and provenance-backed auditability.
 
-Implemented outcomes:
-
-1. Multi-strategy extraction (`fast_text`, `layout`, `vision`) with escalation guard.
-2. Structured normalization (`ExtractedDocument`) and chunking to LDUs with `content_hash` + provenance.
-3. PageIndex generation and persistence.
-4. Query utilities (`pageindex_navigate`, `semantic_search`, `structured_query`) plus claim verification mode.
-5. Data layer integration for vector-ingestion manifests and SQLite fact-table extraction.
-
-Current measured artifact state (as of March 4, 2026):
+Current artifact state:
 
 - Profiles: 6 (`.refinery/profiles/*.json`)
-- Ledger rows: 4 (`.refinery/extraction_ledger.jsonl`)
+- Extraction ledger rows: 14 (`.refinery/extraction_ledger.jsonl`)
 - PageIndex artifacts: 1 (`.refinery/pageindex/company_profile.json`)
 - Vector manifests: 1 (`.refinery/vectorstore/company_profile.jsonl`)
-- SQLite fact rows: 50 for `company_profile` (`.refinery/facts.db`)
+- SQLite fact rows: 50 (`.refinery/facts.db`, `company_profile`)
 
-## 1. Domain Notes (Refined)
+## 1. Domain Notes and Strategy Logic
 
-### 1.1 Strategy Decision Tree
+### 1.1 Extraction Decision Tree
 
-1. Triage each document into a `DocumentProfile`.
-2. Route by expected cost tier:
+1. Triage to `DocumentProfile`
+2. Route by estimated extraction cost:
    - `fast_text_sufficient` -> FastTextExtractor
    - `needs_layout_model` -> LayoutExtractor
    - `needs_vision_model` -> VisionExtractor
-3. Escalate if extractor confidence < `escalation.confidence_threshold`.
+3. Escalate when confidence is below `escalation.confidence_threshold` (`0.7`)
 
-### 1.2 Externalized Rules
+### 1.2 Thresholds and Rules (Externalized)
 
 From `rubric/extraction_rules.yaml`:
 
@@ -43,115 +35,134 @@ From `rubric/extraction_rules.yaml`:
 - `fast_text_min_char_density: 0.0015`
 - `fast_text_max_image_area_ratio: 0.4`
 - `escalation.confidence_threshold: 0.7`
-- Chunking constitution flags for table/list/caption handling.
+- `chunking.max_tokens_per_ldu: 512`
+- `chunking.table_preserve_header: true`
+- `chunking.keep_numbered_lists_together: true`
+- `chunking.attach_captions_to_figures: true`
 
-### 1.3 Failure Modes and Mitigations
+## 2. Pipeline Architecture
 
-1. Multi-column structure collapse with naive OCR/text extraction.
-   - Mitigation: route to layout-aware extraction.
-2. Table-header and row separation harms QA integrity.
-   - Mitigation: preserve tables as coherent LDU units.
-3. Scanned PDFs have weak/empty character streams.
-   - Mitigation: route to vision extraction based on triage signals.
-4. Context fragmentation from fixed token chunking.
-   - Mitigation: chunk by logical document units.
-5. Unverifiable answers without source anchors.
-   - Mitigation: include page-level provenance and content hashes.
+### 2.1 Visual Pipeline Diagram
 
-## 2. Final Architecture and Implementation
+```mermaid
+flowchart LR
+    A[Document Input] --> B[Triage Agent<br/>DocumentProfile]
+    B --> C{Extraction Router}
+    C -->|fast_text| D[FastTextExtractor]
+    C -->|layout| E[LayoutExtractor]
+    C -->|vision| F[VisionExtractor]
+    D -->|conf < 0.7| E
+    E -->|conf < 0.7| F
+    D --> G[ExtractedDocument]
+    E --> G
+    F --> G
+    G --> H[Semantic Chunking Engine<br/>LDUs + Provenance]
+    H --> I[PageIndex Builder]
+    H --> J[Vector Manifest Writer]
+    G --> K[FactTable Extractor<br/>SQLite]
+    I --> L[Query Agent]
+    J --> L
+    K --> L
+    L --> M[Answer + ProvenanceChain]
+```
 
-### 2.1 Pipeline Stages
+### 2.2 Implemented Modules by Stage
 
-1. **Triage Agent**  
-   `src/agents/triage.py` -> emits and persists `DocumentProfile`.
-2. **Structure Extraction Layer**  
-   `src/agents/extractor.py` + `src/strategies/*` -> strategy routing + escalation + ledger logging.
-3. **Semantic Chunking Engine**  
-   `src/agents/chunker.py` -> emits `List[LDU]` with provenance and content hashes.
-4. **PageIndex Builder**  
-   `src/agents/indexer.py` -> builds and persists PageIndex JSON.
-5. **Query Interface Agent**  
-   `src/agents/query_agent.py` -> navigation, semantic retrieval, SQL querying, and claim verification helper.
+1. Triage: `src/agents/triage.py`
+2. Extraction: `src/agents/extractor.py`, `src/strategies/*`
+3. Chunking: `src/agents/chunker.py`
+4. Indexing: `src/agents/indexer.py`
+5. Query: `src/agents/query_agent.py`, `src/agents/audit_agent.py`
+6. Data layer: `src/data/fact_table.py`, `src/data/vector_store.py`
 
-### 2.2 Data Layer
+## 3. Failure Modes with Concrete Corpus Examples
 
-1. **FactTable extractor (SQLite)**: `src/data/fact_table.py`
-2. **Vector ingestion manifest**: `src/data/vector_store.py`
-3. **Audit mode verifier**: `src/agents/audit_agent.py`
-4. **LangGraph-compatible wrapper**: `src/agents/langgraph_query_agent.py` (fallback orchestration path if LangGraph is absent)
+| Failure Mode | Concrete Corpus Example | Observed Signal | Mitigation in Pipeline |
+|---|---|---|---|
+| Scanned text not recoverable by fast extraction | `example_scanned_audit` | `avg_chars_per_page=10.0`, `avg_image_area_ratio=0.85` | Routed to `needs_vision_model`; ledger shows `strategy_used=vision`, `cost_estimate_usd=0.42` |
+| Table-heavy documents need structure-aware handling | `example_tax_report` | `layout_complexity=table_heavy`, `table_like_region_ratio=0.8` | Triaged to `needs_layout_model` and normalized into structured tables |
+| Mixed image/text docs can be misclassified by single heuristic | `company_profile` | `origin_type=mixed`, `image_area_ratio=0.7933`, yet usable text density | Multi-signal confidence + escalation guard prevents unnecessary vision spend |
+| Context fragmentation in retrieval | `company_profile` (pre-fix) | Word-level extraction produced `4989` LDUs and low-quality hits | Upgraded fast extraction to paragraph-level grouping; chunk count reduced to `87` |
+| Provenance gaps reduce auditability | Any long report query | Answers require verifiable source location | Every LDU includes `content_hash` + `ProvenanceChain`; query output returns source metadata |
 
-## 3. Extraction Quality Analysis
+## 4. Side-by-Side Quality Analysis
 
-### 3.1 Method
+### 4.1 Strategy-Level Comparison (Ledger-Backed)
 
-Quality was measured at three levels:
+| Metric | Fast Text | Vision |
+|---|---:|---:|
+| Runs | 13 | 1 |
+| Avg confidence | 0.802 | 0.900 |
+| Avg cost (USD) | 0.000 | 0.420 |
+| Avg time (sec) | 5.774 | 4.870 |
 
-1. Routing quality via extraction ledger (strategy, confidence, cost).
-2. Structured extraction quality proxies from ingested fact rows (header and non-empty value rates).
-3. Unit-level correctness checks from automated tests (`pytest`).
+Source: `.refinery/extraction_ledger.jsonl` (14 rows).
 
-### 3.2 Quantitative Results
+### 4.2 Chunking Quality Comparison (`company_profile`)
 
-#### A. Routing/Confidence (ledger, n=4 runs)
+| Dimension | Before Semantic Grouping | After Semantic Grouping |
+|---|---:|---:|
+| LDU count | 4,989 | 87 |
+| Typical retrieval hit | Single token (`"key"`) | Coherent paragraph block |
+| Query answer quality | Token fragments | Multi-sentence evidence snippets |
 
-- Strategy mix: `fast_text=3`, `vision=1`
-- Mean confidence score: `0.83`
-- Mean estimated API cost: `0.105 USD`
-- Mean extraction processing time: `3.806 sec`
+Observation: Paragraph-level block construction significantly improved retrieval coherence and answer usefulness.
 
-#### B. Table Extraction Proxies (SQLite facts for `company_profile`)
+### 4.3 Table Extraction Proxy Metrics (`company_profile`)
 
-- Extracted fact rows: `50`
-- Non-empty value rate: `100%` (50/50)
-- Column-header coverage: `98%` (49/50)
+| Metric | Value |
+|---|---:|
+| Fact rows extracted | 50 |
+| Non-empty value rate | 100% (50/50) |
+| Header coverage | 98% (49/50) |
 
-#### C. Test Results
+## 5. Provenance Propagation Details
 
-- `python -m pytest -q` -> **4 passed** (March 4, 2026)
-- Includes triage tests and data-layer/audit tests.
+Provenance metadata propagation is implemented explicitly across stages:
 
-### 3.3 Precision/Recall Note
+1. **Extraction stage**  
+   `TextBlock` and other structural units carry page/bbox information.
+2. **Chunking stage**  
+   Each `LDU` gets:
+   - `content_hash`
+   - `ProvenanceChain(records=[ProvenanceRecord(...)])`
+   - page and bbox (if available)
+   - relationship links (`related_ldu_ids`) for cross-references
+3. **Query stage**  
+   Retrieved LDUs are assembled into answers and their provenance records are returned with the response.
 
-A strict corpus-level precision/recall benchmark for table extraction requires manually annotated ground truth for each evaluated PDF table. That annotation set is not yet present in the repository, so the current report uses operational quality proxies and unit tests.
+Result: any answer can be traced back to `(document_id, page_number, bbox, content_hash)`.
 
-Benchmark plan to close this gap:
+## 6. Budget Guard Behavior (Vision Path)
 
-1. Build gold annotations for at least 12 documents (minimum 3 per class).
-2. Align extracted tables to gold by table id/page + normalized cell matching.
-3. Report per-class and macro precision/recall/F1 in the final evaluation table.
+Budget guard behavior in `VisionExtractor`:
 
-## 4. Lessons Learned
+1. Default budget: `0.50 USD` per document.
+2. Per-page processing loop:
+   - Estimate cost from model output length:
+     - `tokens_estimate = len(text) // 4`
+     - `cost_estimate = tokens_estimate / 1000 * 0.15`
+   - Accumulate `total_cost_estimate`.
+3. Guard condition:
+   - If cumulative estimate exceeds budget, log warning and stop processing additional pages.
+4. Persisted evidence:
+   - Router logs strategy/cost in ledger for audit.
 
-### Lesson 1: High image ratio can coexist with usable text streams
+Operational implication: scanned documents are processed with quality priority but bounded cost exposure.
 
-Case: `company_profile` triaged as `origin_type=mixed` with high `image_area_ratio (~0.79)`, but fast-text extraction still produced high confidence (`0.8`) and usable outputs.
+## 7. Tests and Verification
 
-Fix/Insight:
+- Test command: `python -m pytest -q`
+- Current result: **8 passed** (March 7, 2026)
+- Coverage includes:
+  - Triage behavior
+  - Data-layer ingestion + audit
+  - Fast-text grouping
+  - Semantic chunking constitution rules
 
-1. Routing should consider combined signals, not a single image-area threshold.
-2. Escalation guard is essential to avoid overpaying for vision when text extraction is adequate.
+## 8. Deliverables Mapping
 
-### Lesson 2: Single-root PageIndex is operational but weak for navigation quality
-
-Case: Current PageIndex build produces one root section for long reports, which limits section-level navigation precision.
-
-Fix/Insight:
-
-1. Hierarchical section extraction is required for meaningful `pageindex_navigate` behavior.
-2. Section-level entities/summaries should be populated per subtree, not only root scope.
-
-### Lesson 3: Data products must be generated in the main pipeline, not ad hoc scripts
-
-Case: Fact-table and vector outputs were initially optional/decoupled, reducing demo reproducibility.
-
-Fix/Insight:
-
-1. Integrated artifact generation directly in `src/main.py`.
-2. Added deterministic outputs for PageIndex JSON, vector manifest, and optional SQLite ingestion.
-
-## 5. Deliverables Mapping (Final)
-
-### 5.1 Core Models
+### 8.1 Core Models
 
 - `src/models/document_profile.py`
 - `src/models/extracted_document.py`
@@ -159,7 +170,7 @@ Fix/Insight:
 - `src/models/pageindex.py`
 - `src/models/provenance.py`
 
-### 5.2 Agents and Strategies
+### 8.2 Agents and Strategies
 
 - `src/agents/triage.py`
 - `src/agents/extractor.py`
@@ -172,45 +183,23 @@ Fix/Insight:
 - `src/agents/audit_agent.py`
 - `src/agents/langgraph_query_agent.py`
 
-### 5.3 Data Layer
+### 8.3 Data Layer and Artifacts
 
 - `src/data/fact_table.py`
 - `src/data/vector_store.py`
-
-### 5.4 Configuration and Artifacts
-
-- `rubric/extraction_rules.yaml`
 - `.refinery/profiles/*.json`
 - `.refinery/extraction_ledger.jsonl`
 - `.refinery/pageindex/*.json`
 - `.refinery/vectorstore/*.jsonl`
 - `.refinery/facts.db`
 
-### 5.5 Tests and Setup
+## 9. Remaining Gaps
 
-- `tests/test_triage.py`
-- `tests/test_data_layer_and_audit.py`
-- `pyproject.toml`
-- `README.md`
-- `DOMAIN_NOTES.md`
+1. Expand corpus-scale artifacts to >=12 documents across all classes.
+2. Add strict table precision/recall using annotated ground truth.
+3. Upgrade PageIndex from current shallow structure to full hierarchy extraction.
+4. Add 12 cross-class Q/A examples with full provenance citations.
 
-## 6. Demo Evidence Checklist (Runbook)
+## 10. Conclusion
 
-1. Triage output shown with `DocumentProfile` JSON.
-2. Extraction strategy and confidence shown in ledger.
-3. PageIndex JSON shown and navigated.
-4. Query answer shown with provenance.
-5. Fact-table rows shown in SQLite for structured evidence.
-
-## 7. Remaining Gaps to Full Rubric Completion
-
-1. Build corpus-scale PageIndex artifacts (target: >=12 docs, >=3 per class).
-2. Implement strict table precision/recall with annotated ground truth.
-3. Enforce all five chunking constitution rules explicitly in `ChunkValidator`.
-4. Expand PageIndex from single-root baseline to full hierarchy extraction.
-5. Add 12 cross-class Q/A examples with complete provenance citations.
-
-## 8. Conclusion
-
-As of March 4, 2026, the repository contains a working end-to-end refinery pipeline with integrated extraction routing, chunking, indexing, retrieval artifacts, SQLite fact ingestion, and provenance-aware auditing primitives. The system is functional for demonstration and extension, with clearly identified next actions to satisfy the full rubric at corpus scale.
-
+The refined system now has explicit, test-backed semantic chunking rules, improved chunk quality for retrieval, clearer provenance propagation, and bounded-cost vision processing. With corpus-scale evaluation artifacts and full hierarchical indexing, it is positioned for final rubric-level robustness.
